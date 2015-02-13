@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<configuration>
+
+    <!-- 1800: org.bluetooth.service.generic_access -->
+    <service uuid="1800" id="generic_access">
+        <description>Generic Access</description>
+
+        <!-- 2A00: org.bluetooth.characteristic.gap.device_name -->
+        <characteristic uuid="2A00" id="c_device_name">
+            <description>Device Name</description>
+            <properties read="true" const="true" />
+            <value>BlePi</value>
+        </characteristic>
+
+        <!-- 2A01: org.bluetooth.characteristic.gap.appearance -->
+        <characteristic uuid="2A01" id="c_appearance">
+            <description>Appearance</description>
+            <properties read="true" const="true" />
+            <!-- 128: Generic Computer, Generic category -->
+            <value type="hex">0080</value>
+        </characteristic>
+        
+    </service>
+
+    <!-- 180A: org.bluetooth.service.device_information -->
+    <service uuid="180A" id="device_information">
+        <description>Device Information</description>
+
+        <!-- 2A29: org.bluetooth.characteristic.manufacturer_name_string -->
+        <!-- (support for this characteristic is MANDATORY according to the profile spec) -->
+        <characteristic uuid="2A29" id="c_manufacturer_name">
+            <description>Manufacturer Name</description>
+            <properties read="true" const="true" />
+            <value>ITU</value>
+        </characteristic>
+
+        <!-- 2A24: org.bluetooth.characteristic.model_number_string -->
+        <characteristic uuid="2A24" id="c_model_number">
+            <description>Model Number</description>
+            <properties read="true" const="true" />
+            <value>BLED112</value>
+        </characteristic>
+
+    </service>
+
+    <!-- Service for checking which version of firmware is on the board -->
+    <service uuid="4478c6e3-2909-4368-adeb-45ee2267d639" advertise="true">
+        <description>ITU Firmware Information</description>
+
+        <characteristic uuid="b30da200-b152-4fd3-8646-fac245c3bafb" id="c_itu_firmware_version">
+            <description>Firmware Version</description>
+            <properties read="true" const="true" />
+            <value type="utf-8">0.1</value>
+        </characteristic>
+    </service>
+
+    <!-- custom service for tx -->
+    <service uuid="5995e674-76ce-4e5a-add1-5d29cb2eced6" id="data_transceiver">
+        <description>Data Transceiver</description>
+
+        <characteristic uuid="5d7223c3-0f6a-4c64-b1be-40b518499923" id="c_tx">
+            <description>TX</description>
+            <properties write="false" read="true" notify="false" indicate="false"/>
+            <value variable_length="false" length="1024" type="user"></value>
+        </characteristic>        
+    </service>
+
+    <!-- custom service for data rx -->
+    <service uuid="7ef42e31-3dc6-448d-8355-45bc0e736a95" id="data_receiver">
+        <description>Data Receiver</description>
+
+        <characteristic uuid="3520e35e-4c5a-4043-830f-8face439bd58" id="c_rx">
+            <description>RX</description>
+            <properties write="true" read="true" notify="false" indicate="false"/>
+            <value variable_length="true" length="255" type="user"></value>
+        </characteristic>        
+    </service>
+</configuration>
