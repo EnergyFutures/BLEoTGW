@@ -1,4 +1,6 @@
-import bglib, serial, time, datetime,json, array
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import bglib, serial, time, datetime,json, array, signal, requests, os, sys
 
 #----------------------------------------
 # BLE state machine definitions
@@ -12,36 +14,75 @@ BLE_STATE_CONNECTED_SLAVE = 5
 #----------------------------------------
 DEBUG = True
 
+SMAP = "http://192.168.0.102:8080/data/HueBridge0/2/state/on_act/?state="
 
-class Tx():
+class Tx(object):
     '''
-    Send data from Rest interface to Ble
-    '''
-    def __init__(self):
-        self.jsonblob = json.dumps(['foo', {'bar': ('baz', None, 1.0, 2)}])
-        self.jsonbytes = array.array("B", self.jsonblob)
-
-class Rx():
-    '''
-    Receive Data from Ble and send to Rest
+    Send data from Rest interface to Ble TX service
     '''
     def __init__(self):
-        self.jsonblob = None
+        #self.jsonblob = json.dumps(['foo', {'bar': ('baz', None, 1.0, 2)}])
+        self.json_url = "http://192.168.0.102:8080/data/+" #URL to JSON string that contains all information about the REST interface
+        self.jsonblob = ''
+        self.data = [] # Data in byte array
+        self.packetno = 0
 
+    def update_json(self):
+        r = None
+        try:
+            r = requests.get(self.json_url, timeout=1)
+        except:
+            pass
+        if r !=None:
+            if r.status_code == 200:
+                self.jsonblob = str(r.text)
+            else:
+                print "GET returned !=200 "+str(r.status_code)
+        else:
+            self.jsonblob = ''
+        self.data = array.array("B", self.jsonblob)
 
-class BleCon():
+class Rx(object):
+    '''
+    Receive Data from Ble and send to Rest interface
+    '''
     def __init__(self):
+        self.rest = "http://192.168.0.102:8080/data/"
         self.packetno = 0 #packet no of our current transfer process
-        self.address = None #ID of the client
+        self.data = [] # to store data that we receive from the client in bytes
+        self.request = '' # message in unicode
+        self.success = False
 
-class Ble():
+    def send_request(self):
+        '''
+        Sends a request from a Ble client to the actual Rest Interface
+        '''
+        req = self.rest + self.request
+        try:
+            r =  requests.put(req, timeout=1)
+        except:
+            print "Url not valid or no connection \n"+str(sys.exc_info()[0])
+            return False
+        if r.status_code == 200 or 204:
+            print "Successfully set new value"
+            return True
+        else:
+            print "PUT returned !=200 or 204 "+str(r.status_code)
+            return False
+
+
+class BleCon(object):
+    def __init__(self):
+        self.address = None #Bluetooth ID of the client
+        self.tx = Tx()
+        self.rx = Rx()
+
+class Ble(object):
     def __init__(self, port_name="/dev/tty.usbmodem1", baud_rate=38400):
         self.bglib = bglib.BGLib()
         self.port_name = port_name
         self.baud_rate = baud_rate
         self.packet_mode = False
-        self.uuid = [ 0xe2, 0xc5, 0x6d, 0xb5, 0xdf, 0xfb, 0x48, 0xd2, 0xb0, 0x60,
-                0xd0, 0xf5, 0xa7, 0x10, 0x96, 0xe0 ]
         self.major = 0x0001
         self.minor = 0x0001
         self.adv_min = 90
@@ -55,19 +96,36 @@ class Ble():
         #2=gap_undirected_connectable, 3=gap_scannable_non_connectable
         self.connectable = 2
         self.known_clients = {}
+        self.blacklisted_clients = {}
         self.active_client = None
-        self.tx = Tx()
-        self.rx = Rx()
-
-        # build main ad packet
-        self.ibeacon_adv = [ 0x02, 0x01, 0x06, 0x1a, 0xff, 0x4c, 0x00, 0x02, 0x15,
-                    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-                    self.major & 0xFF, self.major >> 8,
-                    self.minor & 0xFF, self.minor >> 8,
-                    0xC6 ]
+        #self.uuid = [0xe4, 0xba, 0x94, 0xc3, 0xc9, 0xb7, 0xcd, 0xb0, 0x9b, 0x48,
+        #        0x7a, 0x43, 0x8a, 0xe5, 0x5a, 0x19]
+        # build custom advertisement data
+        # default BLE stack value: 0201061107e4ba94c3c9b7cdb09b487a438ae55a19
+        self.adv_data = [
+                0x06, # field length
+                0x08, # BGLIB_GAP_AD_TYPE_LOCALNAME_COMPLETE --> field type 0x08=shortname
+                0x42, 0x6C, 0x65, 0x50, 0x69,
+                0x02, # field length
+                0x01, # BGLIB_GAP_AD_TYPE_FLAGS --> field type
+                0x06, # data (0x02 | 0x04 = 0x06, general discoverable + BLE only, no BR+EDR)
+                0x07, # field length
+                0xFF, # BGLIB_GAP_AD_TYPE_SERVICES_128BIT_ALL --> field type
+                0xDD, 0xDD, 0xd, 0xc, 0xb, 0xa# 16 byte UUID placeholders
+                #TODO 0xff as type and ID is: ABCD
+                ]
 
         # set UUID specifically
-        self.ibeacon_adv[9:25] = self.uuid[0:16]
+        #self.adv_data[9:25] = self.uuid[0:16]
+        
+        # build custom scan response data
+        # default BLE stack value: 140942474c69622055314131502033382e344e4657
+        # NOTE there is no need for scan response data, this is the second packet that we could send when a master scans
+        # self.sr_data = [
+        #         0x06, # field length
+        #         0x09, # BGLIB_GAP_AD_TYPE_LOCALNAME_COMPLETE --> field type 0x08=shortname
+        #         0x42, 0x6C, 0x65, 0x50, 0x69
+        #         ]
 
     def setup(self):
         self.bglib.packet_mode = self.packet_mode
@@ -102,21 +160,23 @@ class Ble():
         
 
         print 'set advertisement (min/max interval + all three ad channels)'
+        # This is just to tweak channels, radio...
         self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_set_adv_parameters(
             int(self.adv_min * 0.625), int(self.adv_max * 0.625), 7))
         self.bglib.check_activity(self.ser, 1)
 
-        print 'set beacon data (advertisement packet'
-        self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_set_adv_data(0, self.ibeacon_adv))
-        self.bglib.check_activity(self.ser, 1)
+        # 4 means custom user data in advertisment packet
+        if self.discoverable == 4:
+            print 'set user defined advertisement packet'
+            self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_set_adv_data(0, self.adv_data))
+            self.bglib.check_activity(self.ser, 1)
 
-        print 'set local name (scan response packet)'
-        self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_set_adv_data(1,
-            [ 0x09, 0x09, 0x50, 0x69, 0x42, 0x65, 0x61, 0x63, 0x6f, 0x6e ]))
-        self.bglib.check_activity(self.ser, 1)
+            # print 'set local name (scan response packet)'
+            # self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_set_adv_data(1,
+            #     self.sr_data))
+            # self.bglib.check_activity(self.ser, 1)
 
         # start advertising as discoverable with user data (4) and connectable (2)
-        # FIXME Why not 2 and 2???
         # ibeacon was 0x84, 0x03
         print "Entering advertisement mode..."
         self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_set_mode(self.discoverable, self.connectable))
@@ -132,9 +192,9 @@ class Ble():
         # handler to notify of an API parser timeout condition
 
 
-#----------------------------------------
+#------------------------------------------------------------------------------
 # Event Handlers
-#----------------------------------------
+#------------------------------------------------------------------------------
     def handler_on_timeout(self, sender, args):
         '''
         Gets called when we send a command but we don't get a response back e.g.
@@ -147,6 +207,8 @@ class Ble():
         self.bglib.send_command(self.ser, self.bglib.ble_cmd_system_reset(0))
         self.state = BLE_STATE_STANDBY
 
+    # FIXME not needed as we are not in enhanced broadcasting mode,
+    # This will never get called
     def handler_ble_evt_gap_scan_response(self, sender, args):
         """
         Handler to print scan responses with a timestamp (this only works when
@@ -167,19 +229,33 @@ class Ble():
             print ' '.join(disp_list)
 
     def handler_ble_evt_connection_status(self, sender, args):
+        '''
+        This gets called when a client has just been connected to us.
+        We need to check if we already know it, potentially check if it is blacklisted etc...
+        Then we set it as our active client.
+        '''
         if DEBUG:
             print "ble_evt_connection_status"
             print args
-        self.state = BLE_STATE_CONNECTED_SLAVE
-
-        # now let's keep the clients address as its unique ID and set it as active
-        client_add = tuple(args['address'])
-        if client_add not in self.known_clients:
-            con = BleCon()
-            self.known_clients[client_add] = con
+        # check if connection status flags are 5 (bit0=connection_connected + bit2=connection completed)
+        if (args['flags'] & 0x05) == 0x05:
+            self.state = BLE_STATE_CONNECTED_SLAVE
+            # now let's keep the clients address as its unique ID and set it as active
+            client_add = tuple(args['address'])
+            connection = args['connection']
+            if client_add in self.blacklisted_clients:
+                self.bgli.send_command(self.ser, self.bglib.ble_cmd_connection_disconnect(connection))
+            else:
+                if client_add not in self.known_clients:
+                    con = BleCon() #Create a new connection object for the new client
+                    self.known_clients[client_add] = con
+                else:
+                    con = self.known_clients[client_add]
+                self.active_client = con
+                if self.active_client.tx.packetno == 0:
+                    self.active_client.tx.update_json() #lets keep our state regularly updated
         else:
-            con = self.known_clients[client_add]
-        self.active_client = con
+            print "Connection was not correctly established"
 
     def handler_ble_evt_connection_disconnected(self, sender, args):
         '''
@@ -188,14 +264,17 @@ class Ble():
         if DEBUG:
             print "ble_evt_connection_disconnected"
             print args
+            if args['reason'] == 0x213:
+                print "User on the remote device terminated the connection"
+
         # Remove the active client from our app (even this should not be necessary)
         self.active_client = None
         # We need to advertise ourselves again as a slave
         self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_set_mode(self.discoverable, self.connectable))
 
-        # we can now advertise us again
-        self.state = BLE_STATE_STANDBY
-    
+        # we can now set state to advertise again
+        self.state = BLE_STATE_ADVERTISING
+
     def handler_ble_rsp_gap_set_mode(self, senser, args):
         '''
         GAP mode has been set in response to
@@ -206,11 +285,43 @@ class Ble():
         if args["result"] != 0:
             print "ble_rsp_gap_set_mode FAILED\n Re-running setup()"
             self.setup()
+        else:
+            print "GAP mode sucessfully set"
 
     def handler_ble_evt_attributes_value(self, sender, args):
+        '''
+        Gets called when an attribute has been written by a client
+        {'connection': 0, 'handle': 25, 'reason': 2, 'value': [1], 'offset': 0}
+        '''
         if DEBUG:
             print "ble_evt_attributes_value"
             print args
+        # RX characteristic TODO is it good to hardcode this?
+        if args['handle'] == 25:
+            value = args['value']
+            print "client is writting a command"
+            if self.active_client.rx.packetno == 0:
+                # cleanout old data TODO might be good to keep track of past commands?
+                self.active_client.rx.data = []
+            for char in value:
+                self.active_client.rx.data.append(char)
+            if DEBUG:
+                print self.active_client.rx.data
+            self.active_client.rx.packetno += 1
+            if len(value) < 20:
+                print "last packet received"
+                # resetting packet no
+                self.active_client.rx.packetno = 0
+                # NOTE Now, we need to parse what we have received and then execute it
+                for char in self.active_client.rx.data:
+                    print char
+                    print str(unichr (char))
+                    self.active_client.rx.request = self.active_client.rx.request + str(unichr(char))
+                print self.active_client.rx.request
+                self.active_client.rx.success = self.active_client.rx.send_request()
+                self.active_client.rx_message = ''
+
+
 
     def handler_ble_rsp_attributes_read(self, sender, args):
         if DEBUG:
@@ -246,33 +357,39 @@ class Ble():
         '''
         This is called whenever a client reads an attribute that has the user type 
         enabled. We then serve the data dynamically. Each packet payload is 20 Bytes.
-        Whenever a client is receiving 20 bythes, the client needs to issue another
+        Whenever a client is receiving 20 bytes, the client needs to issue another
         read request on the same atttribute as long as all the data is received
         (This can be concludes when we receive less than 20 bytes)
+        'connection': connection, 'handle': handle, 'offset': offset, 'maxsize': maxsize
         '''
         if DEBUG:
             print "ble_evt_attributes_user_read_request"
             print args
         client_con = args['connection'] # --> we should not care about connection No for identification
         # as we only can have one single client connected at the same time
-        con = self.active_client
-        if con != None:
-            if DEBUG:
-                print "Packet No."
-                print con.packetno
-            # 'connection': connection, 'handle': handle, 'offset': offset, 'maxsize': maxsize })
-            value = get_byte_packet(con.packetno, self.tx.jsonbytes)
-            if len(value) < 20:
-               con.packetno = 0
-            else:
-                con.packetno = con.packetno +1
-            if DEBUG:
-                print value
-            self.bglib.send_command(self.ser, self.bglib.ble_cmd_attributes_user_read_response(client_con, 0, value))
+        # for feedback if previous write has been suceeded
+        if self.active_client !=None: # this can happen if there for some reason old data in buffer
+            if args['handle'] == 25:
+                if self.active_client.rx.success:
+                    value = [0x01]
+                else:
+                    value = [0x00]
+                self.bglib.send_command(self.ser, self.bglib.ble_cmd_attributes_user_read_response(client_con, 0, value))
+            if args['handle'] == 21:
+                if DEBUG:
+                    print "Packet No"
+                    print self.active_client
+                value = get_byte_packet(self.active_client.tx.packetno, self.active_client.tx.data)
+                if len(value) < 20:
+                    self.active_client.tx.packetno = 0
+                else:
+                    self.active_client.tx.packetno+=1
+                if DEBUG:
+                    print value
+                self.bglib.send_command(self.ser, self.bglib.ble_cmd_attributes_user_read_response(client_con, 0, value))
         # this should not happen, only if we have some old data, let's reset
         else:
             self.bglib.send_command(self.ser, self.bglib.ble_cmd_system_reset(0))
-
 
     def handler_ble_rsp_connection_update(self, sender, args):
         if DEBUG:
@@ -297,9 +414,21 @@ class Ble():
         self.bglib.ble_evt_attributes_user_read_request += self.handler_ble_evt_attributes_user_read_request
         self.bglib.ble_rsp_gap_set_mode +=self.handler_ble_rsp_gap_set_mode
         self.bglib.ble_rsp_connection_update +=self.handler_ble_rsp_connection_update
+
 #----------------------------------------
 
+# gracefully exit without a big exception message if possible
+# FIXME should flush our buffers here
+def ctrl_c_handler(signal, frame):
+    print 'Goodbye!'
+    exit(0)
+signal.signal(signal.SIGINT, ctrl_c_handler)
+
+
 def get_byte_packet(packetno, databytes):
+    '''
+    Returns a subarray that fits into a bluetooth packet
+    '''
     subarray = databytes[packetno*20:(packetno+1)*20]
     return subarray
 

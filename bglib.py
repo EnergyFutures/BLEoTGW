@@ -52,7 +52,7 @@ import struct
 # thanks to Masaaki Shibata for Python event handler code
 # http://www.emptypage.jp/notes/pyevent.en.html
 
-DEBUG = False
+DEBUG = True
 
 class BGAPIEvent(object):
 
@@ -633,7 +633,7 @@ class BGLib(object):
     bgapi_rx_expected_length = 0
     busy = False
     packet_mode = False
-    debug = False
+    debug = True
 
     def send_command(self, ser, packet):
         if self.packet_mode: packet = chr(len(packet) & 0xFF) + packet

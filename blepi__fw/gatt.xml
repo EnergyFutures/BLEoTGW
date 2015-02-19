@@ -44,7 +44,7 @@
     </service>
 
     <!-- Service for checking which version of firmware is on the board -->
-    <service uuid="4478c6e3-2909-4368-adeb-45ee2267d639" advertise="true">
+    <service uuid="4478c6e3-2909-4368-adeb-45ee2267d639">
         <description>ITU Firmware Information</description>
 
         <characteristic uuid="b30da200-b152-4fd3-8646-fac245c3bafb" id="c_itu_firmware_version">
