@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-import bglib, serial, time, datetime,json, array, signal, requests, os, sys
+import bglib, serial, time, datetime,json, array, signal, requests, os, sys, zlib
 
 #----------------------------------------
 # BLE state machine definitions
@@ -14,18 +14,17 @@ BLE_STATE_CONNECTED_SLAVE = 5
 #----------------------------------------
 DEBUG = True
 
-SMAP = "http://192.168.0.102:8080/data/HueBridge0/2/state/on_act/?state="
-
 class Tx(object):
     '''
     Send data from Rest interface to Ble TX service
     '''
     def __init__(self):
         #self.jsonblob = json.dumps(['foo', {'bar': ('baz', None, 1.0, 2)}])
-        self.json_url = "http://192.168.0.102:8080/data/+" #URL to JSON string that contains all information about the REST interface
+        self.json_url = "http://192.168.0.100:8080/data/+" #URL to JSON string that contains all information about the REST interface
         self.jsonblob = ''
         self.data = [] # Data in byte array
         self.packetno = 0
+        self.frameno = 0
 
     def update_json(self):
         r = None
@@ -40,7 +39,14 @@ class Tx(object):
                 print "GET returned !=200 "+str(r.status_code)
         else:
             self.jsonblob = ''
-        self.data = array.array("B", self.jsonblob)
+        compressed = zlib.compress(self.jsonblob, 9)
+        b = array.array("B", compressed)
+        self.data=[b[x:x+600] for x in xrange(0, len(b), 600)] #NOTE 600 bytes seems to be the maximum we can fit into a Ble packet
+        if DEBUG:
+            print "LENGTH"
+            print len(b)
+            for item in self.data:
+                print item
 
 class Rx(object):
     '''
@@ -85,8 +91,8 @@ class Ble(object):
         self.packet_mode = False
         self.major = 0x0001
         self.minor = 0x0001
-        self.adv_min = 90
-        self.adv_max = 110
+        self.adv_min = 48
+        self.adv_max = 64
         self.serial = None
         self.state = None
         # 0=gap_non_discoverable, 1=gap_limited_discoverable,
@@ -102,18 +108,32 @@ class Ble(object):
         #        0x7a, 0x43, 0x8a, 0xe5, 0x5a, 0x19]
         # build custom advertisement data
         # default BLE stack value: 0201061107e4ba94c3c9b7cdb09b487a438ae55a19
+        #self.adv_data = [
+        #        0x06, # field length
+        #        0x08, # BGLIB_GAP_AD_TYPE_LOCALNAME_COMPLETE --> field type 0x08=shortname
+        #        0x42, 0x6C, 0x65, 0x50, 0x69,
+        #        0x02, # field length
+        #        0x01, # BGLIB_GAP_AD_TYPE_FLAGS --> field type
+        #        0x06, # data (0x02 | 0x04 = 0x06, general discoverable + BLE only, no BR+EDR)
+        #        0x07, # field length
+        #        0xFF, # BGLIB_GAP_AD_TYPE_SERVICES_128BIT_ALL --> field type
+        #        0xDD, 0xDD, 0xd, 0xc, 0xb, 0xa# 16 byte UUID placeholders
+        #        #TODO 0xff as type and ID is: ABCD
+        #        ]
+
         self.adv_data = [
-                0x06, # field length
+                0x0B, # field length
                 0x08, # BGLIB_GAP_AD_TYPE_LOCALNAME_COMPLETE --> field type 0x08=shortname
-                0x42, 0x6C, 0x65, 0x50, 0x69,
+                0x49, 0x54, 0x55, 0x41, 0x43, 0x54, 0x55, 0x41, 0x54, 0x31,
                 0x02, # field length
                 0x01, # BGLIB_GAP_AD_TYPE_FLAGS --> field type
                 0x06, # data (0x02 | 0x04 = 0x06, general discoverable + BLE only, no BR+EDR)
-                0x07, # field length
+                0x0B, # field length
                 0xFF, # BGLIB_GAP_AD_TYPE_SERVICES_128BIT_ALL --> field type
-                0xDD, 0xDD, 0xd, 0xc, 0xb, 0xa# 16 byte UUID placeholders
+                0xDD, 0xDD, 0x3B, 0x34, 0x44, 0x32, 0x31, 0x04, 0x00, 0x02 # DDDD_HEADER_4D21_TYPE_COORDINATES_MISC
                 #TODO 0xff as type and ID is: ABCD
                 ]
+        
 
         # set UUID specifically
         #self.adv_data[9:25] = self.uuid[0:16]
@@ -237,6 +257,7 @@ class Ble(object):
         if DEBUG:
             print "ble_evt_connection_status"
             print args
+
         # check if connection status flags are 5 (bit0=connection_connected + bit2=connection completed)
         if (args['flags'] & 0x05) == 0x05:
             self.state = BLE_STATE_CONNECTED_SLAVE
@@ -254,6 +275,9 @@ class Ble(object):
                 self.active_client = con
                 if self.active_client.tx.packetno == 0:
                     self.active_client.tx.update_json() #lets keep our state regularly updated
+            if DEBUG:
+                print "Requesting to upgrade connection"
+            self.bglib.send_command(self.ser, self.bglib.ble_cmd_connection_update(connection, self.adv_min * 0.625, self.adv_max * 0.625, 25, 6000))
         else:
             print "Connection was not correctly established"
 
@@ -308,12 +332,13 @@ class Ble(object):
             if DEBUG:
                 print self.active_client.rx.data
             self.active_client.rx.packetno += 1
-            if len(value) < 20:
+            #if len(value) < 22:
+            if value[-1] == 0x0A: # check for new line character at the end
                 print "last packet received"
                 # resetting packet no
                 self.active_client.rx.packetno = 0
                 # NOTE Now, we need to parse what we have received and then execute it
-                for char in self.active_client.rx.data:
+                for char in self.active_client.rx.data[0:-1]: #process all but last character
                     print char
                     print str(unichr (char))
                     self.active_client.rx.request = self.active_client.rx.request + str(unichr(char))
@@ -378,22 +403,45 @@ class Ble(object):
             if args['handle'] == 21:
                 if DEBUG:
                     print "Packet No"
-                    print self.active_client
-                value = get_byte_packet(self.active_client.tx.packetno, self.active_client.tx.data)
-                if len(value) < 20:
+                    print self.active_client.tx.packetno
+                value = get_byte_packet(self.active_client.tx.packetno, self.active_client.tx.frameno, self.active_client.tx.data)
+                if len(value) < 22:
                     self.active_client.tx.packetno = 0
+                    if self.active_client.tx.frameno == (len(self.active_client.tx.data)-1):
+                        print "FINITO"
+                        self.active_client.tx.frameno = 0 # we have actually transimitted all data
+                    else:
+                        self.active_client.tx.frameno+=1
+
                 else:
                     self.active_client.tx.packetno+=1
                 if DEBUG:
                     print value
+                
                 self.bglib.send_command(self.ser, self.bglib.ble_cmd_attributes_user_read_response(client_con, 0, value))
         # this should not happen, only if we have some old data, let's reset
         else:
             self.bglib.send_command(self.ser, self.bglib.ble_cmd_system_reset(0))
 
     def handler_ble_rsp_connection_update(self, sender, args):
+        '''
+            Gets called as a result of us trying to upgrade an existing connection.
+        '''
         if DEBUG:
             print "ble_rsp_connection_update"
+            print args
+        if args['result'] != 0:
+            self.bglib.send_command(self.ser, self.bglib.ble_cmd_system_reset(0))
+            self.state = BLE_STATE_STANDBY
+
+
+
+    def handler_ble_evt_attributes_status(self, sender, args):
+        '''
+            Gets called when a client enables notification or indication
+        '''
+        if DEBUG:
+            print "ble_evt_attributes_status"
             print args
 
 
@@ -414,6 +462,7 @@ class Ble(object):
         self.bglib.ble_evt_attributes_user_read_request += self.handler_ble_evt_attributes_user_read_request
         self.bglib.ble_rsp_gap_set_mode +=self.handler_ble_rsp_gap_set_mode
         self.bglib.ble_rsp_connection_update +=self.handler_ble_rsp_connection_update
+        #self.bglib.ble_evt_attributes_status += self.handler_ble_evt_attributes_status FIXME add for indication
 
 #----------------------------------------
 
@@ -425,11 +474,11 @@ def ctrl_c_handler(signal, frame):
 signal.signal(signal.SIGINT, ctrl_c_handler)
 
 
-def get_byte_packet(packetno, databytes):
+def get_byte_packet(packetno, frameno, databytes):
     '''
     Returns a subarray that fits into a bluetooth packet
     '''
-    subarray = databytes[packetno*20:(packetno+1)*20]
+    subarray = databytes[frameno][packetno*22:(packetno+1)*22] #is empty as soon as we request more
     return subarray
 
 def main():

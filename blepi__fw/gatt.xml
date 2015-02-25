@@ -54,22 +54,15 @@
         </characteristic>
     </service>
 
-    <!-- custom service for tx -->
-    <service uuid="5995e674-76ce-4e5a-add1-5d29cb2eced6" id="data_transceiver">
-        <description>Data Transceiver</description>
-
-        <characteristic uuid="5d7223c3-0f6a-4c64-b1be-40b518499923" id="c_tx">
+    <!-- custom service for BlePi -->
+    <service uuid="0000FFA1-3444-3231-3454-484557494E21" id="blepi_service">
+      <description>BlePi Service</description>
+        <characteristic uuid="0000FF03-3444-3231-3454-484557494E21" id="c_tx">
             <description>TX</description>
             <properties write="false" read="true" notify="false" indicate="false"/>
             <value variable_length="false" length="1024" type="user"></value>
-        </characteristic>        
-    </service>
-
-    <!-- custom service for data rx -->
-    <service uuid="7ef42e31-3dc6-448d-8355-45bc0e736a95" id="data_receiver">
-        <description>Data Receiver</description>
-
-        <characteristic uuid="3520e35e-4c5a-4043-830f-8face439bd58" id="c_rx">
+          </characteristic>
+        <characteristic uuid="0000FF02-3444-3231-3454-484557494E21" id="c_rx">
             <description>RX</description>
             <properties write="true" read="true" notify="false" indicate="false"/>
             <value variable_length="true" length="255" type="user"></value>
