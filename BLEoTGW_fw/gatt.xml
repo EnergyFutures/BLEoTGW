@@ -52,20 +52,26 @@
             <properties read="true" const="true" />
             <value type="utf-8">0.1</value>
         </characteristic>
+
     </service>
 
-    <!-- custom service for BlePi -->
-    <service uuid="0000FFA1-3444-3231-3454-484557494E21" id="blepi_service">
-      <description>BlePi Service</description>
+    <!-- custom service for BLEoTGW -->
+    <service uuid="0000FFA1-3444-3231-3454-484557494E21" id="bleotgw_service">
+      <description>BLEoTGW Service</description>
+
+        <!-- TX characteristic where GW transmits data to clients.-->
         <characteristic uuid="0000FF03-3444-3231-3454-484557494E21" id="c_tx">
             <description>TX</description>
             <properties write="false" read="true" notify="false" indicate="false"/>
             <value variable_length="false" length="1024" type="user"></value>
           </characteristic>
+
+        <!-- RX characteristic for receiving requests from clients.-->
         <characteristic uuid="0000FF02-3444-3231-3454-484557494E21" id="c_rx">
             <description>RX</description>
             <properties write="true" read="true" notify="false" indicate="false"/>
             <value variable_length="true" length="255" type="user"></value>
-        </characteristic>        
+        </characteristic>
+
     </service>
 </configuration>
