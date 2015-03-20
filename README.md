@@ -9,6 +9,7 @@ BLEoTGW.py [-h] -p PATH -u URL [-n NAME] [-d {10,20,30,40,50}]
 Starts a BLEoT Gateway service on the device.
 
 optional arguments:
+
   -h, --help            show this help message and exit
   -p PATH, --path PATH  Path to Bluegiga device (e.g., /dev/tty.usbmodem1)
   -u URL, --url URL     URL of RESTful interface that should be gatewayed
