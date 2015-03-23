@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import bglib, serial, time, datetime,json, array, signal, zlib
-
+'''
+    Very quick and dirty testcode for interfering with the BLEoTGW
+'''
+#FIXME This needs to be cleaned up.
 #----------------------------------------
 # BLE state machine definitions
 #----------------------------------------
@@ -41,7 +44,7 @@ class BleCon():
         self.connection = None
 
 class Ble():
-    def __init__(self, port_name="/dev/tty.usbmodem17", baud_rate=38400):
+    def __init__(self, port_name="/dev/tty.usbmodem1", baud_rate=38400):
         self.bglib = bglib.BGLib()
         self.port_name = port_name
         self.baud_rate = baud_rate
@@ -73,31 +76,20 @@ class Ble():
         self.rx = Rx()
         self.message = ''
         self.zipped = []
-
-        # somehow our own service does not get advertised
         self.uuid_tx = [
                 0x00, 0x00, 0xFF, 0xA1, 0x34, 0x44, 0x32, 0x31, 0x34, 0x54, 0x48, 0x45, 0x57, 0x49, 0x4E, 0x21]
         self.uuid_service = [0x28, 0x00] # 0x2800
         self.uuid_client_characteristic_configuration = [0x29, 0x02] # 0x2902
 
-        # this is our own manufactor version 0xDD, 0xDD...
+        # this is our own service and char 0xDD, 0xDD...
         self.uuid_blepi_service = [255, 221, 221, 59, 52, 68, 50, 49, 4, 0, 2]
-        # This is the firmware service
-        #self.uuid_blepi_service = [
-        #        68, 120, 198, 227, 41, 9, 67, 104, 173, 235,
-        #        69, 238, 34, 103, 214, 57]
-        #self.uuid_blepi_service = [0xA6, 0x32, 0x25, 0x21, 0xEB, 0x79, 0x4B, 0x9F, 0x91, 0x52, 0x19, 0xDA, 0xA4, 0x87, 0x04, 0x18]
-        self.uuid_blepi_characteristic = [
-                0x5d, 0x72, 0x23, 0xc3, 0x0f, 0x6a, 0x4c, 0x64, 0xb1, 0xbe,
-                0x40, 0xb5, 0x18, 0x49, 0x99, 0x23]
         self.uuid_blepi_char_rx = [0x00, 0x00,0xFF,0x03,0x34,0x44,0x32,0x31, 0x34,0x54, 0x48, 0x45, 0x57, 0x49, 0x4E, 0x21]
         self.uuid_blepi_char_tx = [0x00, 0x00, 0xFF, 0x03, 0x34, 0x44, 0x32, 0x31, 0x34, 0x54, 0x48, 0x45, 0x57, 0x49, 0x4E, 0x21]
 
-        self.uuid_blepi_characteristic = self.uuid_blepi_char_tx
+        self.uuid_blepi_characteristic = self.uuid_blepi_char_tx # change to look for rx
 
     def setup(self):
         self.bglib.packet_mode = self.packet_mode
-        # add try except FIXME
         self.ser = serial.Serial(port=self.port_name, baudrate=self.baud_rate, timeout=1)
         # create serial port object and flush buffers
         print 'flushing input'
@@ -136,8 +128,6 @@ class Ble():
         self.scanstart = time.time()
         self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_discover(1))
         self.bglib.check_activity(self.ser, 1)
-       
-
         self.state = BLE_STATE_SCANNING
 
 #----------------------------------------
@@ -186,21 +176,19 @@ class Ble():
                 bytes_left = bytes_left - 1
                 if bytes_left == 0:
                     print this_field
-                    if this_field[0] == 0xFF: #own manufactor ID
+                    if this_field[0] == 0xFF: #check if starts with own manufactor ID
                         ad_services = this_field
-                        print "FOUND"
+                        print "Found a BLEoT device"
                     else:
-                        print "NOSING"
+                        print "No BLEoT device found"
 
         # NOTE: ad_services is built in normal byte order, reversed from that reported in the ad packet
         print "AD SERVICES"
         print ad_services
         print ""
-        if self.uuid_blepi_service == ad_services:
+        if self.uuid_blepi_service == ad_services: # Device contains our service, so we need to connect to it
             if not args['sender'] in self.known_periphals:
                 self.known_periphals.append(args['sender']) # FIXME make Dic
-                #print "%s" % ':'.join(['%02X' % b for b in args['sender'][::-1]])
-
                 # connect to this device using very fast connection parameters (7.5ms - 15ms range)
                 self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_connect_direct(args['sender'], args['address_type'], 0x06, 0x0C, 0x100, 0))
                 self.bglib.check_activity(self.ser, 1)
@@ -208,6 +196,9 @@ class Ble():
 
 
     def handler_ble_evt_connection_status(self, sender, args):
+        """
+        Gets called as soon as we are connected
+        """
         if DEBUG:
             print "ble_evt_connection_status"
             print args
@@ -217,11 +208,11 @@ class Ble():
             print "Connected to %s" % ':'.join(['%02X' % b for b in args['address'][::-1]])
             self.connection_handle = args['connection']
             # NOTE: BGLib command expects little-endian UUID byte order, so it must be reversed for using
-            # NOTE2: must be put inside "list()" so that it is once again iterable
+            # NOTE 2: must be put inside "list()" so that it is once again iterable
             self.bglib.send_command(self.ser,
                     self.bglib.ble_cmd_attclient_read_by_group_type(
                         args['connection'], 0x0001, 0xFFFF,
-                        list(reversed(self.uuid_service))))
+                        list(reversed(self.uuid_service)))) # search for service
             self.bglib.check_activity(self.ser, 1)
             self.state = BLE_STATE_FINDING_SERVICES
 
@@ -232,21 +223,25 @@ class Ble():
             print args
 
     def handler_ble_evt_attclient_group_found(self, sender, args):
+        """
+        Gets called when a new service is found
+        """
         if DEBUG:
             print "ble_evt_attclient_group_found"
             print args
-
         # Now, lets check if this periphal contains our BlePi service
         # found "service" attribute groups (UUID=0x2800),
-        # check for thermometer service (0x f90ea017-f673-45b8-b00b-16a088a2ed61)
         # NOTE: args['uuid'] contains little-endian UUID byte order directly
         # from the API response, so it must be reversed for comparison
         if args['uuid'] == list(reversed(self.uuid_tx)): # FIXME his needs to be the UUID of our TX service
-            print "Found attribute group for ADC service: start=%d, end=%d" % (args['start'], args['end'])
+            print "Found attribute group for TX/RX service: start=%d, end=%d" % (args['start'], args['end'])
             self.att_handle_start = args['start']
             self.att_handle_end = args['end']
 
     def handler_ble_evt_attclient_find_information_found(self, sender, args):
+        """
+        Gets called when a new char is found
+        """
         if DEBUG:
             print "handler_ble_evt_attclient_find_information_found"
             print args
@@ -254,7 +249,7 @@ class Ble():
         # NOTE: args['uuid'] contains little-endian UUID byte order directly
         # from the API response, so it must be reversed for comparison
         if args['uuid'] == list(reversed(self.uuid_blepi_characteristic)):
-            print "Found attribute for ADC measurement: handle=%d" % args['chrhandle']
+            print "Found attribute for RX/TX: handle=%d" % args['chrhandle']
             self.att_handle_measurement = args['chrhandle']
             # NOTE this means we are at our TX characteristic
 
@@ -266,6 +261,9 @@ class Ble():
             
             
     def handler_ble_evt_attclient_procedure_completed(self, sender, args):
+        """
+        Gets called when a list services/chars has been completed
+        """
         if DEBUG:
             print "handler_ble_evt_attclient_procedure_completed"
             print args
@@ -277,9 +275,8 @@ class Ble():
         print self.att_handle_measurement_ccc
         if self.state == BLE_STATE_FINDING_SERVICES:
             if self.att_handle_end > 0:
-                print "Found ADC service"
-
-                # found the ADC service, so now search for the attributes inside
+                print "Found TX/RX service"
+                # found the TX/RX service, so now search for the attributes inside
                 self.state = BLE_STATE_FINDING_ATTRIBUTES
                 self.bglib.send_command(self.ser,
                         self.bglib.ble_cmd_attclient_find_information(
@@ -287,9 +284,9 @@ class Ble():
                             self.att_handle_end))
                 self.bglib.check_activity(self.ser, 1)
             else:
-                print "Could not find ADC service"
+                print "Could not find TX/RX service"
 
-        # check if we just finished searching for attributes within the ADC service
+        # check if we just finished searching for attributes within the TX/RX service
         elif self.state == BLE_STATE_FINDING_ATTRIBUTES:
             if self.att_handle_measurement > 0:
                 self.scanstop = time.time()
@@ -304,7 +301,7 @@ class Ble():
                 self.bglib.check_activity(self.ser, 1)
 
             if self.att_handle_measurement_ccc > 0:
-                print "Found ADC measurement attribute service"
+                print "Found TX/RX attribute service"
                 # found the measurement + client characteristic configuration, so enable notifications
                 # (this is done by writing 0x0001 to the client characteristic configuration attribute)
                 self.state = STATE_LISTENING_MEASUREMENTS
@@ -372,73 +369,6 @@ class Ble():
             print "ble_rsp_gap_set_mode FAILED\n Re-running setup()"
             self.setup()
 
-    def handler_ble_evt_attributes_value(self, sender, args):
-        if DEBUG:
-            print "ble_evt_attributes_value"
-            print args
-
-    def handler_ble_rsp_attributes_read(self, sender, args):
-        if DEBUG:
-            print "handler_ble_rsp_attributes_read"
-            print args
-
-    def handler_ble_rsp_attributes_user_read_response(self, sender, args):
-        if DEBUG:
-            print "ble_rsp_attributes_user_read_response"
-            print args
-
-    def handler_ble_rsp_attributes_write(self, sender, args):
-        if DEBUG:
-            print "ble_rsp_attributes_write"
-            print args
-
-    def handler_ble_rsp_attributes_user_write_response(self, sender, args):
-        if DEBUG:
-            print "ble_rsp_attributes_user_write_response"
-            print args
-
-    def handler_ble_rsp_attributes_read_type(self, sender, args):
-        if DEBUG:
-            print "ble_rsp_attributes_read_type"
-            print args
-
-    def handler_ble_evt_attclient_indicated(self, sender, args):
-        if DEBUG:
-            print "ble_evt_attclient_indicated"
-            print args
-
-    def handler_ble_evt_attributes_user_read_request(self, sender, args):
-        '''
-        This is called whenever a client reads an attribute that has the user type 
-        enabled. We then serve the data dynamically. Each packet payload is 20 Bytes.
-        Whenever a client is receiving 20 bytes, the client needs to issue another
-        read request on the same atttribute as long as all the data is received
-        (This can be concludes when we receive less than 20 bytes)
-        '''
-        if DEBUG:
-            print "ble_evt_attributes_user_read_request"
-            print args
-        client_con = args['connection'] # --> we should not care about connection No for identification
-        # as we only can have one single client connected at the same time
-        con = self.active_client
-        if con != None:
-            if DEBUG:
-                print "Packet No."
-                print con.packetno
-            # 'connection': connection, 'handle': handle, 'offset': offset, 'maxsize': maxsize })
-            value = get_byte_packet(con.packetno, self.tx.jsonbytes)
-            if len(value) < 20:
-               con.packetno = 0
-            else:
-                con.packetno = con.packetno +1
-            if DEBUG:
-                print value
-            self.bglib.send_command(self.ser, self.bglib.ble_cmd_attributes_user_read_response(client_con, 0, value))
-        # this should not happen, only if we have some old data, let's reset
-        else:
-            self.bglib.send_command(self.ser, self.bglib.ble_cmd_system_reset(0))
-
-
     def handler_ble_rsp_connection_update(self, sender, args):
         if DEBUG:
             print "ble_rsp_connection_update"
@@ -452,14 +382,6 @@ class Ble():
         self.bglib.ble_evt_gap_scan_response += self.handler_ble_evt_gap_scan_response
         self.bglib.ble_evt_connection_disconnected += self.handler_ble_evt_connection_disconnected
         self.bglib.ble_evt_connection_status += self.handler_ble_evt_connection_status
-        self.bglib.ble_rsp_attributes_read += self.handler_ble_rsp_attributes_read
-        self.bglib.ble_rsp_attributes_user_read_response += self.handler_ble_rsp_attributes_user_read_response
-        self.bglib.ble_rsp_attributes_write += self.handler_ble_rsp_attributes_write
-        self.bglib.ble_rsp_attributes_user_write_response += self.handler_ble_rsp_attributes_user_write_response
-        self.bglib.ble_rsp_attributes_read_type += self.handler_ble_rsp_attributes_read_type
-        self.bglib.ble_evt_attclient_indicated += self.handler_ble_evt_attclient_indicated
-        self.bglib.ble_evt_attributes_value += self.handler_ble_evt_attributes_value
-        self.bglib.ble_evt_attributes_user_read_request += self.handler_ble_evt_attributes_user_read_request
         self.bglib.ble_rsp_gap_set_mode +=self.handler_ble_rsp_gap_set_mode
         self.bglib.ble_rsp_connection_update +=self.handler_ble_rsp_connection_update
         self.bglib.ble_evt_attclient_group_found +=self.handler_ble_evt_attclient_group_found
