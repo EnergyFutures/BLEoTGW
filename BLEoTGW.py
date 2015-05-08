@@ -66,7 +66,7 @@ class BLEoTG(object):
                 #0xDD, 0xDD, 0x3B, 0x34, 0x44, 0x32, 0x31, 0x04, 0x00, 0x02 # DDDD_HEADER_4D21_TYPE_COORDINATES_MISC
                 0xDD, 0xDD, 0x34, 0x44, 0x32, 0x31, 0x00, 0x00, 0x01, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x99, 0x99 # DDDD_HEADER_4D21_TYPE_COORDINATES_MISC
                 ]
-        self.adv_data[2:12] = util.get_char_array(self.adv_name)[0:7]
+        self.adv_data[2:9] = util.get_char_array(self.adv_name)[0:7]
         logging.debug('Advertising Data: %s', self.adv_data)
         
         # build custom scan response data
