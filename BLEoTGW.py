@@ -52,19 +52,21 @@ class BLEoTG(object):
         self.known_clients = {}
         self.blacklisted_clients = {}
         self.active_client = None
+        #dddd344432310000290702000000030000
         self.adv_data = [
-                0x0B, # field length
+                0x08, # field length
                 0x08, # BGLIB_GAP_AD_TYPE_LOCALNAME_COMPLETE --> field type 0x08=shortname
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # adv name
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, # adv name
                 #0x99, 0x54, 0x55, 0x41, 0x43, 0x54, 0x55, 0x41, 0x54, 0x31, # adv name
                 0x02, # field length
                 0x01, # BGLIB_GAP_AD_TYPE_FLAGS --> field type
                 0x06, # data (0x02 | 0x04 = 0x06, general discoverable + BLE only, no BR+EDR)
-                0x0B, # field length
+                0x12, # field length
                 0xFF, # BGLIB_GAP_AD_TYPE_SERVICES_128BIT_ALL --> field type
-                0xDD, 0xDD, 0x3B, 0x34, 0x44, 0x32, 0x31, 0x04, 0x00, 0x02 # DDDD_HEADER_4D21_TYPE_COORDINATES_MISC
+                #0xDD, 0xDD, 0x3B, 0x34, 0x44, 0x32, 0x31, 0x04, 0x00, 0x02 # DDDD_HEADER_4D21_TYPE_COORDINATES_MISC
+                0xDD, 0xDD, 0x34, 0x44, 0x32, 0x31, 0x00, 0x00, 0x01, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x01, 0x99, 0x99 # DDDD_HEADER_4D21_TYPE_COORDINATES_MISC
                 ]
-        self.adv_data[2:12] = util.get_char_array(self.adv_name)[0:10]
+        self.adv_data[2:12] = util.get_char_array(self.adv_name)[0:7]
         logging.debug('Advertising Data: %s', self.adv_data)
         
         # build custom scan response data
@@ -425,7 +427,7 @@ def main():
     parser.add_argument('-u', '--url', help='''URL of RESTful interface that
             should be gatewayed''', required=True)
     parser.add_argument('-n', '--name', help='Advertising name of BLEoT Gateway',
-            required=False, default='BLEoTGW001')
+            required=False, default='BLEoTGW')
     parser.add_argument('-d', '--debug', help='Debug level (0-4)',
             type=int, default=20, choices=[10, 20, 30, 40, 50])
     args = parser.parse_args()
@@ -433,7 +435,7 @@ def main():
     logging.info('BLEoTGateway is starting.')
     print 'BLEoTGateway is starting'
     logging.debug('Creating new BLEoTG() instance')
-    adv_name_rf = util.pad_truncate(args.name, 10)
+    adv_name_rf = util.pad_truncate(args.name, 7)
     bleotgw = BLEoTG(port_name=args.path, adv_name=adv_name_rf, url=args.url)
     bleotgw.register_handlers()
     bleotgw.setup()
