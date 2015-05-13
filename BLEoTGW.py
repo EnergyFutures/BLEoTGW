@@ -195,7 +195,7 @@ class BLEoTG(object):
                     self.active_client.tx.update_json() #lets keep our state regularly updated
             logging.debug('Requesting to upgrade connection')
             self.bglib.send_command(self.ser, self.bglib.ble_cmd_connection_update(
-                connection, self.adv_min * 0.625, self.adv_max * 0.625, 25, 6000))
+                connection, 6, 24, 0, 25))
         else:
             logging.warning('Connection was not correctly established!')
 
@@ -244,9 +244,11 @@ class BLEoTG(object):
                 # cleanout old data TODO might be good to keep track of past commands?
                 self.active_client.rx.data = []
             for char in value:
+                print "char "+str(unichr(char))
                 self.active_client.rx.data.append(char)
             logging.debug('Data received: %s',self.active_client.rx.data)
             self.active_client.rx.packetno += 1
+            self.bglib.send_command(self.ser, self.bglib.ble_cmd_attributes_user_write_response(args['connection'], 0x0))
             #if len(value) < 22:
             if value[-1] == 0x0A: # check for new line character at the end
                 logging.debug('last packet received')
@@ -258,6 +260,8 @@ class BLEoTG(object):
                 logging.debug('full request: %s', self.active_client.rx.request)
                 self.active_client.rx.success = self.active_client.rx.send_request()
                 self.active_client.rx_message = ''
+                self.active_client.rx.data = []
+                self.active_client.rx.request = ''
 
     def handler_ble_evt_attributes_user_read_request(self, sender, args):
         '''
@@ -399,6 +403,9 @@ class Rx(object):
         Sends a request from a BLEoT client to the actual REST Interface
         '''
         req = self.rest + self.request
+        req = str(req)
+        urlhard = "http://192.168.0.103:8080/data/HueBridge0/2/state/on_act?state=1"
+        print "REQ "+req
         try:
             r =  requests.put(req, timeout=1)
         except:
