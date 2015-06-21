@@ -42,6 +42,10 @@ class BLEoTG(object):
         self.state = None
         self.tx_handle = 21
         self.rx_handle = 24 #FIXME, check if Nos are correct
+        self.light_on_off_handle = 28
+        self.light_brightness_handle = 31
+
+        self.rest_mappings = {28:'HueBridge0/2/state/on_act?state=', 31: 'HueBridge0/2/state/bri_act?state=', 35:'', 38:''}
         # NOTE
         # 0=gap_non_discoverable, 1=gap_limited_discoverable,
         # 2=gap_general_discoverable, 3=gap_broadcast, 4=gap_user_data
@@ -262,6 +266,19 @@ class BLEoTG(object):
                 self.active_client.rx_message = ''
                 self.active_client.rx.data = []
                 self.active_client.rx.request = ''
+        elif args['handle'] in self.rest_mappings:
+            print 'http to ble proxy'
+            value = args['value']
+            print value
+            self.active_client.rx.request = self.rest_mappings[args['handle']]+str(value[0])
+            self.active_client.rx.success = self.active_client.rx.send_request()
+            if self.active_client.rx.success:
+                self.bglib.send_command(self.ser, self.bglib.ble_cmd_attributes_user_write_response(args['connection'], 0x0))
+            else:
+                self.bglib.send_command(self.ser, self.bglib.ble_cmd_attributes_user_write_response(args['connection'], 0x0480))
+            self.active_client.rx_message = ''
+            self.active_client.rx.data = []
+            self.active_client.rx.request = ''
 
     def handler_ble_evt_attributes_user_read_request(self, sender, args):
         '''
@@ -404,10 +421,11 @@ class Rx(object):
         '''
         req = self.rest + self.request
         req = str(req)
-        urlhard = "http://192.168.0.103:8080/data/HueBridge0/2/state/on_act?state=1"
+        urlhard = "http://192.168.0.100:8080/data/HueBridge0/2/state/on_act?state=1"
         print "REQ "+req
+        r =  requests.put(req, timeout=2)
         try:
-            r =  requests.put(req, timeout=1)
+            r =  requests.put(req, timeout=2)
         except:
             logging.warning('Url not valid or no connection \n'+str(sys.exc_info()[0]))
             return False

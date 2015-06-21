@@ -71,7 +71,43 @@
             <description>RX</description>
             <properties write="true" read="true" notify="false" indicate="false"/>
             <value variable_length="true" length="255" type="user"></value>
-        </characteristic>
+          </characteristic>
+
+        </service>
+
+    <!-- custom service for Light -->
+    <service uuid="0000ffa1-0000-1000-8000-00805f9b34fc" id="light_service_1">
+      <description>Light Service 1</description>
+
+        <characteristic uuid="0000ff04-0000-1000-8000-00805f9b34fb" id="light_on_off">
+          <description>Light ON/OFF</description>
+            <properties write="true" read="true" notify="false" indicate="false"/>
+            <value variable_length="true" length="255" type="user"></value>
+          </characteristic>
+
+        <characteristic uuid="0000ff05-0000-1000-8000-00805f9b34fb" id="light_brightness">
+          <description>Light Brightness</description>
+            <properties write="true" read="true" notify="false" indicate="false"/>
+            <value variable_length="true" length="255" type="user"></value>
+          </characteristic>
+
+        </service>
+
+    <!-- custom service for Light -->
+    <service uuid="0000ffa1-0000-1000-8000-00805f9b34fc" id="light_service_2">
+      <description>Light Service 2</description>
+
+        <characteristic uuid="0000ff04-0000-1000-8000-00805f9b34fb" id="light_on_off">
+          <description>Light ON/OFF</description>
+            <properties write="true" read="true" notify="false" indicate="false"/>
+            <value variable_length="true" length="255" type="user"></value>
+          </characteristic>
+
+        <characteristic uuid="0000ff05-0000-1000-8000-00805f9b34fb" id="light_brightness">
+          <description>Light Brightness</description>
+            <properties write="true" read="true" notify="false" indicate="false"/>
+            <value variable_length="true" length="255" type="user"></value>
+          </characteristic>
 
     </service>
 </configuration>
