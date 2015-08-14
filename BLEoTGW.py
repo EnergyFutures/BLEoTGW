@@ -128,7 +128,6 @@ class BLEoTG(object):
             # self.bglib.send_command(self.ser, self.bglib.ble_cmd_gap_set_adv_data(1,
             #     self.sr_data))
             # self.bglib.check_activity(self.ser, 1)
-
         # start advertising as discoverable with user data (4) and connectable (2)
         # ibeacon was 0x84, 0x03
         logging.debug('Entering advertising mode.')
@@ -143,6 +142,17 @@ class BLEoTG(object):
         # FIXME is a timeout really serious? can we do anything here,
         # except to notice that we had a timeout?
         # handler to notify of an API parser timeout condition
+
+    def update(self):
+        logging.info("Updating BLEBridge")
+
+    def updateFromRest(self):
+        '''
+        Updates the available devices and their states from the REST interface.
+        The new state is perisisted in new advertisement messages.
+        '''
+        logging.info("Reading content of RESTful interface")
+
 
 #------------------------------------------------------------------------------
 # Event Handlers
